@@ -7,6 +7,7 @@ import (
 	"debug/elf"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,8 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/projectdiscovery/stringsutil"
 	"gopkg.in/yaml.v3"
-
-	"github.com/karrick/godirwalk"
 )
 
 // FileExists checks if the file exists in the provided path
@@ -57,52 +56,49 @@ type FileFilters struct {
 
 func DeleteFilesOlderThan(folder string, filter FileFilters) error {
 	startScan := time.Now()
-	return godirwalk.Walk(folder, &godirwalk.Options{
-		Unsorted:            true,
-		FollowSymbolicLinks: false,
-		Callback: func(osPathname string, de *godirwalk.Dirent) error {
-			if osPathname == "" {
-				return nil
-			}
-			if de.IsDir() {
-				return nil
-			}
-			fileInfo, err := os.Stat(osPathname)
-			if err != nil {
-				return nil
-			}
-			fileName := fileInfo.Name()
-			if filter.Prefix != "" && !strings.HasPrefix(fileName, filter.Prefix) {
-				return nil
-			}
-			if filter.Suffix != "" && !strings.HasSuffix(fileName, filter.Suffix) {
-				return nil
-			}
-			if filter.RegexPattern != "" {
-				regex, err := regexp.Compile(filter.RegexPattern)
-				if err != nil {
-					return err
-				}
-				if !regex.MatchString(fileName) {
-					return nil
-				}
-			}
-			if filter.CustomCheck != nil && !filter.CustomCheck(osPathname) {
-				return nil
-			}
-			if fileInfo.ModTime().Add(filter.OlderThan).Before(startScan) {
-				if filter.Callback != nil {
-					return filter.Callback(osPathname)
-				} else {
-					os.RemoveAll(osPathname)
-				}
-			}
+	return filepath.WalkDir(folder, func(osPathname string, de fs.DirEntry, err error) error {
+		if err != nil {
 			return nil
-		},
-		ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
-			return godirwalk.SkipNode
-		},
-	})
+		}
+		if osPathname == "" {
+			return nil
+		}
+		if de.IsDir() {
+			return nil
+		}
+		fileInfo, err := os.Stat(osPathname)
+		if err != nil {
+			return nil
+		}
+		fileName := fileInfo.Name()
+		if filter.Prefix != "" && !strings.HasPrefix(fileName, filter.Prefix) {
+			return nil
+		}
+		if filter.Suffix != "" && !strings.HasSuffix(fileName, filter.Suffix) {
+			return nil
+		}
+		if filter.RegexPattern != "" {
+			regex, err := regexp.Compile(filter.RegexPattern)
+			if err != nil {
+				return err
+			}
+			if !regex.MatchString(fileName) {
+				return nil
+			}
+		}
+		if filter.CustomCheck != nil && !filter.CustomCheck(osPathname) {
+			return nil
+		}
+		if fileInfo.ModTime().Add(filter.OlderThan).Before(startScan) {
+			if filter.Callback != nil {
+				return filter.Callback(osPathname)
+			} else {
+				os.RemoveAll(osPathname)
+			}
+		}
+		return nil
+	},
+	)
 }
 
 // DownloadFile to specified path
@@ -370,4 +366,28 @@ func UseMusl(path string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// IsReadable verify file readability
+func IsReadable(fileName string) (bool, error) {
+	return HasPermission(fileName, os.O_RDONLY)
+}
+
+// IsWriteable verify file writeability
+func IsWriteable(fileName string) (bool, error) {
+	return HasPermission(fileName, os.O_WRONLY)
+}
+
+// HasPermission checks if the file has the requested permission
+func HasPermission(fileName string, permission int) (bool, error) {
+	file, err := os.OpenFile(fileName, permission, 0666)
+	if err != nil {
+		if os.IsPermission(err) {
+			return false, errors.Wrap(err, "permission error")
+		}
+		return false, err
+	}
+	file.Close()
+
+	return true, nil
 }

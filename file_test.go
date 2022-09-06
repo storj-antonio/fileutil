@@ -218,7 +218,7 @@ func TestReadFile(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	require.Nil(t, err, "couldn't create file: %s", err)
 	fname := f.Name()
-	f.Write([]byte(fileContent))
+	_, _ = f.Write([]byte(fileContent))
 	f.Close()
 	defer os.Remove(fname)
 
@@ -240,7 +240,7 @@ func TestReadFileWithBufferSize(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	require.Nil(t, err, "couldn't create file: %s", err)
 	fname := f.Name()
-	f.Write([]byte(fileContent))
+	_, _ = f.Write([]byte(fileContent))
 	f.Close()
 	defer os.Remove(fname)
 
@@ -253,6 +253,21 @@ func TestReadFileWithBufferSize(t *testing.T) {
 		require.Equal(t, fileContentLines[i], line, "lines don't match")
 		i++
 	}
+}
+
+func TestPermissions(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	require.Nil(t, err, "couldn't create file: %s", err)
+	fname := f.Name()
+	f.Close()
+	defer os.Remove(fname)
+
+	ok, err := IsReadable(fname)
+	require.True(t, ok)
+	require.Nil(t, err)
+	ok, err = IsWriteable(fname)
+	require.True(t, ok)
+	require.Nil(t, err)
 }
 
 func TestUseMusl(t *testing.T) {
